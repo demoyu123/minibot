@@ -1,0 +1,134 @@
+Metadata-Version: 2.4
+Name: minibot
+Version: 0.1.0
+Summary: A tiny teaching-first ReAct agent with tools, memory, and RAG.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# minibot
+
+minibot 是一款给 agent 初学者读的第一份 Python agent 代码。
+
+它参考了：
+
+- `nanobot` 的工程分层：agent loop、tool registry、session/history、long-term memory。
+- `all-in-rag` 的 RAG 教学链路：加载文档、切块、检索、把检索结果交给 LLM 生成。
+- 你给的流程图：Query -> LLM -> Thinking/Action/Action Input -> Observation -> Final Answer。
+
+目标不是做最强，而是做清楚：少依赖、少抽象、能跑、能改。
+
+## 架构
+
+```text
+user query
+  -> MiniBot.run()
+  -> build prompt(short memory + long memory + tools + observations)
+  -> LLM returns JSON
+      {"thought": "...", "action": "search_docs", "action_input": {...}}
+      or {"thought": "...", "final": "..."}
+  -> ToolRegistry.run()
+  -> observation appended to scratchpad
+  -> final answer
+```
+
+## 目录
+
+```text
+minibot/
+  agent.py      # ReAct 主循环
+  llm.py        # OpenAI-compatible HTTP 调用，也支持 FakeLLM 测试
+  memory.py     # 短期记忆 + 长期记忆 + 历史归档
+  rag.py        # 最小 RAG：加载、切块、关键词检索
+  tools.py      # 工具定义与注册
+  cli.py        # 命令行聊天入口
+data/docs/      # 你可以把知识库 txt/md 文件放这里
+memory/         # 运行后自动生成
+```
+
+## 快速开始
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e .
+```
+
+配置任意 OpenAI-compatible 模型：
+
+```powershell
+$env:OPENAI_API_KEY="你的 key"
+$env:OPENAI_BASE_URL="https://api.openai.com/v1"
+$env:MINIBOT_MODEL="gpt-4o-mini"
+minibot
+```
+
+也可以直接运行：
+
+```powershell
+python -m minibot.cli
+```
+
+## 内置工具
+
+- `calculator`：计算简单数学表达式。
+- `get_weather`：查询城市当前天气。
+- `remember`：写入长期记忆。
+- `search_memory`：检索长期记忆。
+- `search_docs`：检索 `data/docs` 下的本地知识库。
+
+## 兜底与缺工具处理
+
+minibot 遇到异常时会尽量给出真实原因，而不是直接报错退出：
+
+- LLM API 失败：提示检查 API Key、base_url、模型名或网络。
+- LLM 返回坏 JSON：尽量恢复 `final` 内容。
+- 工具调用失败：返回工具名和失败原因。
+- 缺少工具：说明缺哪个工具，并询问是否创建。
+
+如果 minibot 说缺少某个工具，你可以直接回复：
+
+```text
+需要创建
+```
+
+CLI 里也可以输入更稳定的英文命令：
+
+```text
+/create-tool
+```
+
+它会生成 `minibot/custom_tools.py`，并在当前 CLI 会话里注册这个工具。新工具默认是一个 HTTP GET 模板，要获取真实数据，需要配置环境变量：
+
+```powershell
+$env:MINIBOT_TOOL_工具名_URL="https://api.example.com/search?q={query}"
+```
+
+也可以直接打开 `minibot/custom_tools.py`，把里面的函数改成你需要的真实数据获取逻辑。
+
+## 记忆设计
+
+minibot 刻意保留两层记忆，方便学习：
+
+- 短期记忆：`ShortTermMemory`，只保留最近几轮对话，进入每次 prompt。
+- 长期记忆：`LongTermMemory`，用 `memory/long_term.jsonl` 持久化事实。
+- 历史归档：`memory/history.jsonl`，记录每轮用户输入和最终回答。
+
+这对应 nanobot 的思想：短期上下文负责当前任务，长期文件负责稳定事实，历史文件负责可追溯。
+
+## RAG 设计
+
+为了便于阅读，`rag.py` 不默认引入 embedding 和向量库，而是：
+
+1. 读取 `data/docs/**/*.md` 和 `*.txt`。
+2. 按字符长度切块。
+3. 对 query 分词。
+4. 用关键词命中数排序。
+
+这不是工业最优，但它把 RAG 的骨架讲清楚了。学生读懂后，可以把 `SimpleRAG.search()` 换成 embedding + FAISS/Milvus。
+
+## 开发验证
+
+```powershell
+python -m unittest discover -s tests
+python examples/demo_fake_llm.py
+```
