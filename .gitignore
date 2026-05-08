@@ -2,6 +2,5 @@
 __pycache__/
 *.pyc
 minibot.egg-info/
-minibot.local.env
 memory/*.jsonl
 .pytest_cache/
